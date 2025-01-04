@@ -194,8 +194,17 @@ gst_myeq_transform (GstBaseTransform * trans, GstBuffer * inbuf,
 {
   GstMyeq *myeq = GST_MYEQ (trans);
 
-  GST_DEBUG_OBJECT (myeq, "transform");
+  GST_DEBUG_OBJECT(myeq, "transform");
 
+  GstMapInfo map;
+
+  gst_buffer_map(inbuf, &map, GST_MAP_READ);
+  // FIXME データを処理する
+  gst_buffer_unmap(inbuf, &map);
+
+  // 出力バッファにデータをコピー これで後続の element にデータが渡る
+  gst_buffer_copy_into(outbuf, inbuf, GST_BUFFER_COPY_ALL, 0, -1);
+  
   return GST_FLOW_OK;
 }
 
