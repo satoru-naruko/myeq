@@ -34,6 +34,8 @@
 #include "config.h"
 #endif
 
+#include <math.h>
+
 #include <gst/gst.h>
 #include <gst/audio/gstaudiofilter.h>
 #include "gstmyeq.h"
@@ -121,6 +123,8 @@ gst_myeq_class_init (GstMyeqClass * klass)
 static void
 gst_myeq_init (GstMyeq *myeq)
 {
+    myeq->gain = 0.5; // デフォルトのゲイン値を設定
+    myeq->frequency = 1000.0; // デフォルトの周波数を設定
 }
 
 void
@@ -196,14 +200,25 @@ gst_myeq_transform (GstBaseTransform * trans, GstBuffer * inbuf,
 
   GST_DEBUG_OBJECT(myeq, "transform");
 
-  GstMapInfo map;
+  GstMapInfo in_map, out_map;
+  gst_buffer_map (inbuf, &in_map, GST_MAP_READ);
+  gst_buffer_map (outbuf, &out_map, GST_MAP_WRITE);
 
-  gst_buffer_map(inbuf, &map, GST_MAP_READ);
-  // FIXME データを処理する
-  gst_buffer_unmap(inbuf, &map);
+  // サンプルデータを取得
+  gint16 *in_data = (gint16 *) in_map.data;
+  gint16 *out_data = (gint16 *) out_map.data;
+  guint num_samples = in_map.size / sizeof (gint16);
 
-  // 出力バッファにデータをコピー これで後続の element にデータが渡る
-  gst_buffer_copy_into(outbuf, inbuf, GST_BUFFER_COPY_ALL, 0, -1);
+  // 簡単なイコライザ処理
+  for (guint i = 0; i < num_samples; i++) {
+    // 低周波数成分を減衰させ、高周波数成分を強調
+    gdouble sample = (gdouble) in_data[i];
+    sample *= (1.0 + myeq->gain * sin (2.0 * G_PI * myeq->frequency * i / num_samples));
+    out_data[i] = (gint16) CLAMP (sample, -32768, 32767);
+  }
+
+  gst_buffer_unmap (inbuf, &in_map);
+  gst_buffer_unmap (outbuf, &out_map);
   
   return GST_FLOW_OK;
 }

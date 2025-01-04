@@ -36,7 +36,9 @@ typedef struct _GstMyeqClass GstMyeqClass;
 struct _GstMyeq
 {
   GstAudioFilter base_myeq;
-
+  GstBaseTransform parent;
+  gdouble gain;
+  gdouble frequency;
 };
 
 struct _GstMyeqClass
