@@ -36,6 +36,7 @@
 
 #include <math.h>
 
+#include <glib-object.h>
 #include <gst/gst.h>
 #include <gst/audio/gstaudiofilter.h>
 #include "gstmyeq.h"
@@ -69,21 +70,21 @@ enum
 
 /* FIXME add/remove the formats that you want to support */
 static GstStaticPadTemplate gst_myeq_src_template =
-GST_STATIC_PAD_TEMPLATE ("src",
+GST_STATIC_PAD_TEMPLATE("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("audio/x-raw,format=S16LE,rate=[1,max],"
-      "channels=[1,max],layout=interleaved")
-    );
+    GST_STATIC_CAPS("audio/x-raw,format=(string){S16LE, S32LE, F32LE, F64LE},rate=[1,max],"
+        "channels=[1,max],layout=interleaved")
+);
 
 /* FIXME add/remove the formats that you want to support */
 static GstStaticPadTemplate gst_myeq_sink_template =
-GST_STATIC_PAD_TEMPLATE ("sink",
+GST_STATIC_PAD_TEMPLATE("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("audio/x-raw,format=S16LE,rate=[1,max],"
-      "channels=[1,max],layout=interleaved")
-    );
+    GST_STATIC_CAPS("audio/x-raw,format=(string){S16LE, S32LE, F32LE, F64LE},rate=[1,max],"
+        "channels=[1,max],layout=interleaved")
+);
 
 
 /* class initialization */
@@ -123,13 +124,11 @@ gst_myeq_class_init (GstMyeqClass * klass)
 static void
 gst_myeq_init (GstMyeq *myeq)
 {
-    myeq->gain = 0.5; // デフォルトのゲイン値を設定
-    myeq->frequency = 1000.0; // デフォルトの周波数を設定
+    myeq->gain = 0.3;
+    myeq->frequency = 1000.0;
 }
 
-void
-gst_myeq_set_property (GObject * object, guint property_id,
-    const GValue * value, GParamSpec * pspec)
+void gst_myeq_set_property (GObject * object, guint property_id, const GValue * value, GParamSpec * pspec)
 {
   GstMyeq *myeq = GST_MYEQ (object);
 
@@ -193,34 +192,55 @@ gst_myeq_setup (GstAudioFilter * filter, const GstAudioInfo * info)
 
 /* transform */
 static GstFlowReturn
-gst_myeq_transform (GstBaseTransform * trans, GstBuffer * inbuf,
-    GstBuffer * outbuf)
+gst_myeq_transform(GstBaseTransform* trans, GstBuffer* inbuf,
+    GstBuffer* outbuf)
 {
-  GstMyeq *myeq = GST_MYEQ (trans);
+    GstMyeq* myeq = GST_MYEQ(trans);
 
-  GST_DEBUG_OBJECT(myeq, "transform");
+    GST_DEBUG_OBJECT(myeq, "transform");
 
-  GstMapInfo in_map, out_map;
-  gst_buffer_map (inbuf, &in_map, GST_MAP_READ);
-  gst_buffer_map (outbuf, &out_map, GST_MAP_WRITE);
+    GstMapInfo in_map, out_map;
+    if (!gst_buffer_map(inbuf, &in_map, GST_MAP_READ)) {
+        GST_ERROR_OBJECT(myeq, "Failed to map input buffer");
+        return GST_FLOW_ERROR;
+    }
+    if (!gst_buffer_map(outbuf, &out_map, GST_MAP_WRITE)) {
+        gst_buffer_unmap(inbuf, &in_map);
+        GST_ERROR_OBJECT(myeq, "Failed to map output buffer");
+        return GST_FLOW_ERROR;
+    }
+	GST_AUDIO_FORMAT_F32LE;
 
-  // サンプルデータを取得
-  gint16 *in_data = (gint16 *) in_map.data;
-  gint16 *out_data = (gint16 *) out_map.data;
-  guint num_samples = in_map.size / sizeof (gint16);
+    const GstAudioInfo* info = GST_AUDIO_FILTER_INFO(myeq);
+    gint sample_rate = GST_AUDIO_INFO_RATE(info);
+    gint channels = GST_AUDIO_INFO_CHANNELS(info);
+    gint bytes_per_frame = GST_AUDIO_INFO_BPF(info);
+    gssize num_frames = in_map.size / bytes_per_frame; // 型を gssize に変更
+    g_print("GST_AUDIO_FORMAT_F32LE Frequency: %f, Sample Rate: %d, Channels: %d, Num Frames: %zd\n",
+        myeq->frequency, sample_rate, channels, num_frames);
 
-  // 簡単なイコライザ処理
-  for (guint i = 0; i < num_samples; i++) {
-    // 低周波数成分を減衰させ、高周波数成分を強調
-    gdouble sample = (gdouble) in_data[i];
-    sample *= (1.0 + myeq->gain * sin (2.0 * G_PI * myeq->frequency * i / num_samples));
-    out_data[i] = (gint16) CLAMP (sample, -32768, 32767);
-  }
+    gfloat* in_data = (gfloat*)in_map.data;
+    gfloat* out_data = (gfloat*)out_map.data;
 
-  gst_buffer_unmap (inbuf, &in_map);
-  gst_buffer_unmap (outbuf, &out_map);
-  
-  return GST_FLOW_OK;
+    for (gint i = 0; i < num_frames; i++) {
+        for (gint ch = 0; ch < channels; ch++) {
+            gint sample_index = i * channels + ch;
+
+            gdouble t = (gdouble)i / sample_rate;
+
+            gdouble modulation = 1.0 + myeq->gain * sin(2.0 * G_PI * myeq->frequency * t);
+
+            gfloat sample = in_data[sample_index];
+            sample *= (gfloat)CLAMP(modulation, 0.0, 2.0);
+
+            out_data[sample_index] = sample;
+        }
+    }
+
+    gst_buffer_unmap(inbuf, &in_map);
+    gst_buffer_unmap(outbuf, &out_map);
+
+    return GST_FLOW_OK;
 }
 
 static GstFlowReturn
