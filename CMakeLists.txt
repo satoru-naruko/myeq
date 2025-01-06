@@ -24,8 +24,20 @@ target_compile_options(myeq PRIVATE ${GST_CFLAGS_OTHER})
 # インクルードディレクトリを設定
 target_include_directories(myeq PRIVATE ${GST_INCLUDE_DIRS} ${GST_BASE_INCLUDE_DIRS} ${GST_AUDIO_INCLUDE_DIRS})
 
-# リンクするライブラリを設定
-target_link_libraries(myeq PRIVATE ${GST_LIBRARIES} ${GST_BASE_LIBRARIES} ${GST_AUDIO_LIBRARIES})
+message(STATUS "GST_LIBRARY_DIRS = ${GST_LIBRARY_DIRS}")
+message(STATUS "GST_LIBRARIES=${GST_LIBRARIES}")
+message(STATUS "GST_BASE_LIBRARIES=${GST_BASE_LIBRARIES}")
+message(STATUS "GST_AUDIO_LIBRARIES=${GST_AUDIO_LIBRARIES}")
+
+target_link_directories(myeq PRIVATE "C:/gstreamer/1.0/msvc_x86_64/lib")
+target_link_libraries(myeq PRIVATE
+    gstreamer-1.0
+    gstbase-1.0
+    gstaudio-1.0
+    gobject-2.0
+    glib-2.0
+    intl
+)
 
 # インストールターゲットを設定
 install(TARGETS myeq
